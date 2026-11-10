@@ -506,8 +506,7 @@ function endCombatPhase() {
     gameState.overtimeEnrage = false;
     
     if (gameState.round >= gameState.maxRounds) {
-        alert("🏆 VALHALLA BẤT DIỆT! Bạn đã sống sót qua toàn bộ 30 Mùa Đông Ragnarok (60s/Round) ở độ khó Hardcore!");
-        gameState.screen = "START";
+        gameState.screen = "VICTORY";
         return;
     }
 

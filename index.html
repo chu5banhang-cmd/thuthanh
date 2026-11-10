@@ -2,14 +2,20 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Viking Defense 3D Voxel - Ragnarok Survival</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="game-container">
-        <canvas id="gameCanvas" width="1100" height="700"></canvas>
+    <div id="orientation-hint">📱 Xoay ngang điện thoại để góc nhìn to rõ hơn!</div>
+    
+    <div id="game-wrapper">
+        <div id="game-container">
+            <canvas id="gameCanvas" width="1100" height="700"></canvas>
+        </div>
     </div>
+
+    <button id="fullscreen-btn" onclick="toggleFullScreen()">⛶ Toàn màn hình</button>
 
     <script src="constants.js"></script>
     <script src="audio.js"></script>
@@ -59,10 +65,75 @@
             });
         }
 
-        canvas.addEventListener("mousemove", function(e) {
+        // Hỗ trợ chế độ Toàn Màn Hình cho Mobile & PC
+        function toggleFullScreen() {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                const root = document.documentElement;
+                if (root.requestFullscreen) {
+                    root.requestFullscreen().catch(() => {});
+                } else if (root.webkitRequestFullscreen) {
+                    root.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+        function updateFullscreenBtn() {
+            const btn = document.getElementById("fullscreen-btn");
+            if (btn) {
+                const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                btn.innerHTML = isFS ? "✖ Thu nhỏ" : "⛶ Toàn màn hình";
+            }
+        }
+        document.addEventListener("fullscreenchange", updateFullscreenBtn);
+        document.addEventListener("webkitfullscreenchange", updateFullscreenBtn);
+
+        // Chuyển đổi tọa độ màn hình chuẩn xác sang hệ tọa độ Canvas 1100x700
+        function getCanvasPos(evt) {
             const rect = canvas.getBoundingClientRect();
-            mousePos.x = e.clientX - rect.left;
-            mousePos.y = e.clientY - rect.top;
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            let clientX, clientY;
+            if (evt.touches && evt.touches.length > 0) {
+                clientX = evt.touches[0].clientX;
+                clientY = evt.touches[0].clientY;
+            } else if (evt.changedTouches && evt.changedTouches.length > 0) {
+                clientX = evt.changedTouches[0].clientX;
+                clientY = evt.changedTouches[0].clientY;
+            } else {
+                clientX = evt.clientX;
+                clientY = evt.clientY;
+            }
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function updatePointerPos(e) {
+            const pos = getCanvasPos(e);
+            mousePos.x = pos.x;
+            mousePos.y = pos.y;
+        }
+
+        canvas.addEventListener("mousemove", updatePointerPos);
+        canvas.addEventListener("touchmove", function(e) {
+            updatePointerPos(e);
+            e.preventDefault();
+        }, { passive: false });
+
+        // Nhận diện Input chạm & click đồng nhất không độ trễ
+        canvas.addEventListener("pointerdown", function(event) {
+            if (event.button && event.button !== 0) return;
+            const pos = getCanvasPos(event);
+            mousePos.x = pos.x;
+            mousePos.y = pos.y;
+            handleGameInput(pos.x, pos.y);
+            event.preventDefault();
         });
 
         function checkBuildLocation(x, y) {
@@ -71,7 +142,7 @@
             let distToBase = Math.hypot(x - baseCenterX, y - baseCenterY);
 
             if (y < 85 || y > 670) return { valid: false, reason: "Không thể xây ở ngoài rìa chiến trường!" };
-            if (distToBase > 195) return { valid: false, reason: "Chỉ được dựng phòng tuyến bên trong vòng Cổ Ngữ quanh Đại Sảnh!" };
+            if (distToBase > 195) return { valid: false, reason: "Chỉ được dựng phòng tuyến trong vòng Cổ Ngữ quanh Đại Sảnh!" };
             if (distToBase < 58) return { valid: false, reason: "Không thể xây đè lên Đại Sảnh Viking!" };
 
             for (let w of walls) {
@@ -124,7 +195,7 @@
                 if (t.maxAmmo === undefined) t.maxAmmo = maxClip;
                 if (t.ammo === undefined) t.ammo = maxClip;
 
-                // Tự động nạp lại băng đạn nếu băng đạn = 0 và trong kho có tài nguyên tương ứng
+                // Tự động nạp lại băng đạn nếu hết đạn và trong kho còn tài nguyên tương ứng
                 if (t.ammo <= 0 && gameState.resources[resType] >= 1) {
                     gameState.resources[resType]--;
                     t.ammo = t.maxAmmo;
@@ -136,7 +207,6 @@
                 }
 
                 if (t.cooldown === 0) {
-                    // Nếu hết đạn và kho cũng cạn tài nguyên hệ đó thì ngừng bắn
                     if (t.ammo <= 0) {
                         t.outOfAmmo = true;
                         t.cooldown = 15;
@@ -341,8 +411,7 @@
                     monsters.splice(index, 1);
                     if (gameState.baseHp <= 0) {
                         gameState.baseHp = 0;
-                        alert(`💀 ĐẠI SẢNH VIKING ĐÃ THẤT THỦ Ở MÙA ĐÔNG THỨ ${gameState.round}! Ragnarok đã nuốt chửng bộ tộc của bạn!`);
-                        gameState.screen = "START";
+                        gameState.screen = "GAMEOVER";
                         return;
                     }
                 }
@@ -354,14 +423,11 @@
             }
         }
 
-        canvas.addEventListener("click", function(event) {
-            const rect = canvas.getBoundingClientRect();
-            const clickX = event.clientX - rect.left;
-            const clickY = event.clientY - rect.top;
-
+        // Xử lý Input điều khiển chung (Tương thích hoàn hảo Touch Điện Thoại & Chuột PC)
+        function handleGameInput(clickX, clickY) {
             if (typeof playSound === 'function') playSound('click');
 
-            if (gameState.screen === "START") {
+            if (gameState.screen === "START" || gameState.screen === "GAMEOVER" || gameState.screen === "VICTORY") {
                 if (clickX >= 400 && clickX <= 700 && clickY >= 430 && clickY <= 500) {
                     startGame();
                 }
@@ -369,104 +435,117 @@
             }
 
             if (gameState.screen === "REST_MENU") {
-                if (clickX >= 285 && clickX <= 313 && clickY >= 188 && clickY <= 216) {
+                // Điều phối Gỗ (Mở rộng vùng bấm để dễ chạm trên điện thoại)
+                if (clickX >= 275 && clickX <= 325 && clickY >= 180 && clickY <= 225) {
                     if (gameState.allocation.wood > 0) gameState.allocation.wood--;
                 }
-                if (clickX >= 355 && clickX <= 383 && clickY >= 188 && clickY <= 216) {
+                if (clickX >= 345 && clickX <= 395 && clickY >= 180 && clickY <= 225) {
                     let total = Object.values(gameState.allocation).reduce((a, b) => a + b, 0);
                     if (total < gameState.workers) gameState.allocation.wood++;
                 }
 
+                // Điều phối Đá
                 if (gameState.round >= 4) {
-                    if (clickX >= 285 && clickX <= 313 && clickY >= 258 && clickY <= 286) {
+                    if (clickX >= 275 && clickX <= 325 && clickY >= 250 && clickY <= 295) {
                         if (gameState.allocation.stone > 0) gameState.allocation.stone--;
                     }
-                    if (clickX >= 355 && clickX <= 383 && clickY >= 258 && clickY <= 286) {
+                    if (clickX >= 345 && clickX <= 395 && clickY >= 250 && clickY <= 295) {
                         let total = Object.values(gameState.allocation).reduce((a, b) => a + b, 0);
                         if (total < gameState.workers) gameState.allocation.stone++;
                     }
                 }
 
+                // Điều phối Sắt
                 if (gameState.round >= 8) {
-                    if (clickX >= 285 && clickX <= 313 && clickY >= 328 && clickY <= 356) {
+                    if (clickX >= 275 && clickX <= 325 && clickY >= 320 && clickY <= 365) {
                         if (gameState.allocation.iron > 0) gameState.allocation.iron--;
                     }
-                    if (clickX >= 355 && clickX <= 383 && clickY >= 328 && clickY <= 356) {
+                    if (clickX >= 345 && clickX <= 395 && clickY >= 320 && clickY <= 365) {
                         let total = Object.values(gameState.allocation).reduce((a, b) => a + b, 0);
                         if (total < gameState.workers) gameState.allocation.iron++;
                     }
                 }
 
+                // Điều phối Thép
                 if (gameState.round >= 15) {
-                    if (clickX >= 285 && clickX <= 313 && clickY >= 398 && clickY <= 426) {
+                    if (clickX >= 275 && clickX <= 325 && clickY >= 390 && clickY <= 435) {
                         if (gameState.allocation.steel > 0) gameState.allocation.steel--;
                     }
-                    if (clickX >= 355 && clickX <= 383 && clickY >= 398 && clickY <= 426) {
+                    if (clickX >= 345 && clickX <= 395 && clickY >= 390 && clickY <= 435) {
                         let total = Object.values(gameState.allocation).reduce((a, b) => a + b, 0);
                         if (total < gameState.workers) gameState.allocation.steel++;
                     }
                 }
 
-                if (clickX >= 85 && clickX <= 385 && clickY >= 455 && clickY <= 505) {
+                // Tuyển thêm Dân làng Viking
+                if (clickX >= 80 && clickX <= 390 && clickY >= 450 && clickY <= 510) {
                     if (gameState.workers >= gameState.maxWorkers) {
-                        alert("Đã đạt giới hạn tối đa 15 Dân làng Viking!");
+                        spawnFloatingText(230, 480, "⚠️ Đã đạt tối đa 15 dân làng!", "#ffd54f", 14);
                     } else if (gameState.resources.wood >= COSTS.villager) {
                         gameState.resources.wood -= COSTS.villager;
                         gameState.workers++;
                         gameState.allocation.wood++;
                         initVillagers();
+                        spawnFloatingText(230, 480, "+1 Dân làng Viking", "#00e676", 14);
                     } else {
-                        alert(`Không đủ ${COSTS.villager} Gỗ để chiêu mộ thêm Dân làng!`);
+                        spawnFloatingText(230, 480, `⚠️ Cần ${COSTS.villager} Gỗ chiêu mộ!`, "#ff5252", 14);
                     }
                 }
 
-                if (clickX >= 85 && clickX <= 385 && clickY >= 520 && clickY <= 570) {
+                // Sửa Đại Sảnh & Tường
+                if (clickX >= 80 && clickX <= 390 && clickY >= 515 && clickY <= 575) {
                     let damagedWalls = walls.some(w => w.hp < w.maxHp);
                     if (gameState.baseHp >= gameState.maxBaseHp && !damagedWalls) {
-                        alert("Đại Sảnh và toàn bộ Tường chắn đều đang đầy máu!");
+                        spawnFloatingText(230, 545, "✨ Đại Sảnh & Tường đang đầy máu!", "#00e676", 14);
                     } else if (gameState.resources.wood >= COSTS.repair) {
                         gameState.resources.wood -= COSTS.repair;
                         gameState.baseHp = Math.min(gameState.maxBaseHp, gameState.baseHp + 150);
                         walls.forEach(w => { w.hp = w.maxHp; });
+                        spawnFloatingText(230, 545, `🔧 Đã sửa Đại Sảnh (+150 HP) & Tường!`, "#00e676", 14);
                         if (typeof playSound === 'function') playSound('build');
                     } else {
-                        alert(`Không đủ ${COSTS.repair} Gỗ để sửa chữa Đại Sảnh & Tường!`);
+                        spawnFloatingText(230, 545, `⚠️ Cần ${COSTS.repair} Gỗ để sửa chữa!`, "#ff5252", 14);
                     }
                 }
 
-                if (gameState.round >= 6 && clickX >= 435 && clickX <= 655 && clickY >= 230 && clickY <= 285) {
+                // Huấn luyện Chiến binh Huscarl
+                if (gameState.round >= 6 && clickX >= 430 && clickX <= 660 && clickY >= 225 && clickY <= 290) {
                     if (gameState.resources.wood >= COSTS.soldier) {
                         gameState.resources.wood -= COSTS.soldier;
                         gameState.soldiers++;
                         initVillagers();
+                        spawnFloatingText(545, 255, "+1 Chiến binh Huscarl", "#00e676", 14);
                     } else {
-                        alert(`Không đủ ${COSTS.soldier} Gỗ để huấn luyện Chiến binh Huscarl!`);
+                        spawnFloatingText(545, 255, `⚠️ Cần ${COSTS.soldier} Gỗ huấn luyện!`, "#ff5252", 14);
                     }
                 }
 
-                if (clickX >= 710 && clickX <= 845 && clickY >= 185 && clickY <= 250) {
+                // Chọn Công trình phòng thủ
+                if (clickX >= 705 && clickX <= 850 && clickY >= 180 && clickY <= 255) {
                     gameState.selectedTool = 'wallWood'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
-                if (gameState.round >= 4 && clickX >= 865 && clickX <= 1000 && clickY >= 185 && clickY <= 250) {
+                if (gameState.round >= 4 && clickX >= 860 && clickX <= 1005 && clickY >= 180 && clickY <= 255) {
                     gameState.selectedTool = 'wallStone'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
-                if (clickX >= 710 && clickX <= 845 && clickY >= 265 && clickY <= 330) {
+                if (clickX >= 705 && clickX <= 850 && clickY >= 260 && clickY <= 335) {
                     gameState.selectedTool = 'towerWood'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
-                if (gameState.round >= 4 && clickX >= 865 && clickX <= 1000 && clickY >= 265 && clickY <= 330) {
+                if (gameState.round >= 4 && clickX >= 860 && clickX <= 1005 && clickY >= 260 && clickY <= 335) {
                     gameState.selectedTool = 'towerStone'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
-                if (gameState.round >= 8 && clickX >= 710 && clickX <= 845 && clickY >= 345 && clickY <= 410) {
+                if (gameState.round >= 8 && clickX >= 705 && clickX <= 850 && clickY >= 340 && clickY <= 415) {
                     gameState.selectedTool = 'towerIron'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
-                if (gameState.round >= 15 && clickX >= 865 && clickX <= 1000 && clickY >= 345 && clickY <= 410) {
+                if (gameState.round >= 15 && clickX >= 860 && clickX <= 1005 && clickY >= 340 && clickY <= 415) {
                     gameState.selectedTool = 'towerSteel'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
-                if (clickX >= 710 && clickX <= 1000 && clickY >= 425 && clickY <= 475) {
+                // Nút Phá dỡ công trình cũ (Hoàn 50%)
+                if (clickX >= 705 && clickX <= 1005 && clickY >= 420 && clickY <= 480) {
                     gameState.selectedTool = 'demolish'; gameState.screen = "REST_BUILD"; initVillagers(); return;
                 }
 
-                if (clickX >= 710 && clickX <= 1000 && clickY >= 500 && clickY <= 570) {
+                // Nút Bắt đầu Giao Chiến
+                if (clickX >= 705 && clickX <= 1005 && clickY >= 495 && clickY <= 575) {
                     initVillagers();
                     startCombat();
                     return;
@@ -475,7 +554,7 @@
             }
 
             if (gameState.screen === "REST_BUILD") {
-                if (clickX >= 890 && clickX <= 1085 && clickY >= 12 && clickY <= 54) {
+                if (clickX >= 880 && clickX <= 1090 && clickY >= 8 && clickY <= 60) {
                     gameState.screen = "REST_MENU";
                     gameState.selectedTool = null;
                     initVillagers();
@@ -486,24 +565,24 @@
 
                 if (gameState.selectedTool === 'demolish') {
                     for (let i = towers.length - 1; i >= 0; i--) {
-                        if (Math.hypot(clickX - towers[i].x, clickY - towers[i].y) < 22) {
+                        if (Math.hypot(clickX - towers[i].x, clickY - towers[i].y) < 26) {
                             let tType = towers[i].type || 'wood';
                             if (tType === 'wood') gameState.resources.wood += Math.floor(COSTS.towerWood * 0.5);
                             else if (tType === 'stone') gameState.resources.stone += Math.floor(COSTS.towerStone * 0.5);
                             else if (tType === 'iron') gameState.resources.iron += Math.floor(COSTS.towerIron * 0.5);
                             else if (tType === 'steel') gameState.resources.steel += Math.floor(COSTS.towerSteel * 0.5);
-                            spawnFloatingText(towers[i].x, towers[i].y - 20, "🔨 Đã Phá Dỡ (+50%)", "#ffd54f", 12);
+                            spawnFloatingText(towers[i].x, towers[i].y - 20, "🔨 Đã Phá Dỡ (+50%)", "#ffd54f", 13);
                             towers.splice(i, 1);
                             if (typeof playSound === 'function') playSound('build');
                             return;
                         }
                     }
                     for (let i = walls.length - 1; i >= 0; i--) {
-                        if (Math.hypot(clickX - walls[i].x, clickY - walls[i].y) < 18) {
+                        if (Math.hypot(clickX - walls[i].x, clickY - walls[i].y) < 22) {
                             let wType = walls[i].type || 'wood';
                             if (wType === 'wood') gameState.resources.wood += Math.floor(COSTS.wallWood * 0.5);
                             else if (wType === 'stone') gameState.resources.stone += Math.floor(COSTS.wallStone * 0.5);
-                            spawnFloatingText(walls[i].x, walls[i].y - 20, "🔨 Đã Phá Dỡ (+50%)", "#ffd54f", 12);
+                            spawnFloatingText(walls[i].x, walls[i].y - 20, "🔨 Đã Phá Dỡ (+50%)", "#ffd54f", 13);
                             walls.splice(i, 1);
                             if (typeof playSound === 'function') playSound('build');
                             return;
@@ -514,7 +593,7 @@
 
                 const check = checkBuildLocation(clickX, clickY);
                 if (!check.valid) {
-                    alert(check.reason);
+                    spawnFloatingText(clickX, clickY - 20, `⚠️ ${check.reason}`, "#ff5252", 13);
                     return;
                 }
 
@@ -523,50 +602,53 @@
                 if (t === 'wallWood' && gameState.resources.wood >= COSTS.wallWood) {
                     gameState.resources.wood -= COSTS.wallWood;
                     walls.push({ x: clickX, y: clickY, hp: 140, maxHp: 140, type: 'wood' });
+                    spawnFloatingText(clickX, clickY - 18, `-${COSTS.wallWood}🪵`, "#ffd54f", 12);
                     if (typeof playSound === 'function') playSound('build');
                 } else if (t === 'wallStone' && gameState.resources.stone >= COSTS.wallStone) {
                     gameState.resources.stone -= COSTS.wallStone;
                     walls.push({ x: clickX, y: clickY, hp: 380, maxHp: 380, type: 'stone' });
+                    spawnFloatingText(clickX, clickY - 18, `-${COSTS.wallStone}🪨`, "#ffd54f", 12);
                     if (typeof playSound === 'function') playSound('build');
                 } else if (t === 'towerWood' && gameState.resources.wood >= COSTS.towerWood) {
                     gameState.resources.wood -= COSTS.towerWood;
                     towers.push({ x: clickX, y: clickY, ...TOWER_STATS.wood, cooldown: 0, type: 'wood', angle: 0, recoil: 0, ammo: AMMO_PER_RESOURCE.wood, maxAmmo: AMMO_PER_RESOURCE.wood, outOfAmmo: false });
+                    spawnFloatingText(clickX, clickY - 22, `-${COSTS.towerWood}🪵`, "#ffd54f", 12);
                     if (typeof playSound === 'function') playSound('build');
                 } else if (t === 'towerStone' && gameState.resources.stone >= COSTS.towerStone) {
                     gameState.resources.stone -= COSTS.towerStone;
                     towers.push({ x: clickX, y: clickY, ...TOWER_STATS.stone, cooldown: 0, type: 'stone', angle: 0, recoil: 0, ammo: AMMO_PER_RESOURCE.stone, maxAmmo: AMMO_PER_RESOURCE.stone, outOfAmmo: false });
+                    spawnFloatingText(clickX, clickY - 22, `-${COSTS.towerStone}🪨`, "#ffd54f", 12);
                     if (typeof playSound === 'function') playSound('build');
                 } else if (t === 'towerIron' && gameState.resources.iron >= COSTS.towerIron) {
                     gameState.resources.iron -= COSTS.towerIron;
                     towers.push({ x: clickX, y: clickY, ...TOWER_STATS.iron, cooldown: 0, type: 'iron', angle: 0, recoil: 0, ammo: AMMO_PER_RESOURCE.iron, maxAmmo: AMMO_PER_RESOURCE.iron, outOfAmmo: false });
+                    spawnFloatingText(clickX, clickY - 22, `-${COSTS.towerIron}⛏️`, "#ffd54f", 12);
                     if (typeof playSound === 'function') playSound('build');
                 } else if (t === 'towerSteel' && gameState.resources.steel >= COSTS.towerSteel) {
                     gameState.resources.steel -= COSTS.towerSteel;
                     towers.push({ x: clickX, y: clickY, ...TOWER_STATS.steel, cooldown: 0, type: 'steel', angle: 0, recoil: 0, ammo: AMMO_PER_RESOURCE.steel, maxAmmo: AMMO_PER_RESOURCE.steel, outOfAmmo: false });
+                    spawnFloatingText(clickX, clickY - 22, `-${COSTS.towerSteel}⚡`, "#ffd54f", 12);
                     if (typeof playSound === 'function') playSound('build');
                 } else {
-                    alert("Không đủ tài nguyên trong kho để dựng công trình này!");
+                    spawnFloatingText(clickX, clickY - 20, "⚠️ Không đủ tài nguyên!", "#ff5252", 14);
                 }
                 return;
             }
-        });
+        }
 
         // ============================================================================
         // ENGINE ĐỒ HỌA PIXEL 3D (2.5D VOXEL EXTRUSION + ÁNH SÁNG & BÓNG ĐỔ 3 CHIỀU)
         // ============================================================================
 
-        // Hàm cốt lõi vẽ Khối Hộp 3D Voxel (Mặt Trước, Mặt Trên chiếu sáng, Mặt Cạnh Bên đổ bóng)
         function drawVoxelBox(cx, cy, z, w, d, h, topCol, frontCol, sideCol, strokeCol = null) {
             const isoX = d * 0.42;
             const isoY = d * 0.36;
             const x0 = cx - w / 2;
-            const y0 = cy - z; // Đáy mặt trước
+            const y0 = cy - z;
 
-            // 1. Mặt Trước (Front Face)
             ctx.fillStyle = frontCol;
             ctx.fillRect(x0, y0 - h, w, h);
 
-            // 2. Mặt Trên (Top Face - Nghiêng 3D lên trên & sang phải)
             ctx.fillStyle = topCol;
             ctx.beginPath();
             ctx.moveTo(x0, y0 - h);
@@ -576,7 +658,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // 3. Mặt Cạnh Phải (Right Side Face - Tối hơn tạo khối 3D rõ rệt)
             ctx.fillStyle = sideCol;
             ctx.beginPath();
             ctx.moveTo(x0 + w, y0 - h);
@@ -586,7 +667,6 @@
             ctx.closePath();
             ctx.fill();
 
-            // Viền cạnh sắc nét kiểu Voxel 3D
             if (strokeCol) {
                 ctx.strokeStyle = strokeCol;
                 ctx.lineWidth = 1;
@@ -597,7 +677,6 @@
             }
         }
 
-        // Bóng đổ 3D nghiêng theo góc nắng Bắc Âu
         function draw3DShadow(x, y, rx, ry, heightOffset = 10) {
             ctx.save();
             ctx.fillStyle = "rgba(5, 10, 8, 0.42)";
@@ -607,7 +686,6 @@
             ctx.restore();
         }
 
-        // Vẽ Cây Thông Bắc Âu 3D Voxel (Khối tháp 3 tầng + Tuyết phủ mặt trên)
         function drawVikingPine3D(x, y, scale = 1) {
             ctx.save();
             ctx.translate(x, y);
@@ -615,29 +693,23 @@
 
             draw3DShadow(0, 4, 18, 7, 22);
 
-            // Thân gỗ 3D
             drawVoxelBox(0, 4, 0, 8, 8, 16, "#6d4c41", "#4e342e", "#27160e");
 
-            // 3 tầng tán lá Voxel 3D
             drawVoxelBox(0, 4, 12, 28, 22, 10, "#2ecc71", "#1e513b", "#112e21");
             drawVoxelBox(0, 4, 21, 22, 17, 9,  "#58d68d", "#26684b", "#143828");
             drawVoxelBox(0, 4, 29, 14, 12, 8,  "#abebc6", "#2d7a58", "#184532");
-            // Đỉnh tuyết trắng 3D
             drawVoxelBox(0, 4, 36, 8,  7,  5,  "#ffffff", "#dceef2", "#90a4ae");
 
             ctx.restore();
         }
 
-        // Vẽ Tảng Đá Bắc Âu 3D Voxel
         function drawNordicRock3D(x, y) {
             draw3DShadow(x, y + 2, 16, 6, 12);
             drawVoxelBox(x - 3, y + 2, 0, 18, 14, 10, "#90a4ae", "#607d8b", "#37474f");
             drawVoxelBox(x + 4, y + 4, 0, 12, 10, 7,  "#b0bec5", "#546e7a", "#263238");
-            // Rêu 3D trên đỉnh đá
             drawVoxelBox(x - 4, y + 2, 10, 10, 8, 2, "#4caf50", "#2e7d32", "#1b5e20");
         }
 
-        // Chậu lửa 3D
         function drawTorchBrazier3D(x, y) {
             draw3DShadow(x, y + 2, 9, 4, 10);
             drawVoxelBox(x, y + 2, 0, 10, 8, 7, "#546e7a", "#37474f", "#1c262b");
@@ -653,48 +725,37 @@
             drawVoxelBox(x, y + 2, 16, 5, 4, 5 - flicker * 0.5, "#ffffff", "#fff59d", "#fbc02d");
         }
 
-        // Vẽ Mỏ Tài Nguyên 3D Voxel
         function drawResourceNode3D(node) {
             const x = node.x;
             const y = node.y;
 
-            // Bệ đá 3D của khu mỏ
             draw3DShadow(x, y + 8, 38, 15, 10);
             drawVoxelBox(x, y + 14, 0, 62, 42, 6, "#37474f", "#263238", "#11171a", "#8d6e63");
 
             if (node.type === 'wood') {
-                // Khúc gỗ 3D xếp chồng & Gốc cây cổ thụ 3D
                 drawVoxelBox(x - 14, y + 8, 6, 18, 12, 7, "#8d6e63", "#5d4037", "#3e2723");
                 drawVoxelBox(x - 14, y + 8, 13, 14, 10, 6, "#a1887f", "#6d4c41", "#4e342e");
                 drawVoxelBox(x + 10, y + 6, 6, 20, 16, 16, "#bcaaa4", "#5d4037", "#3e2723");
-                // Rìu 3D cắm trên gốc cây
                 drawVoxelBox(x + 12, y + 6, 22, 3, 3, 11, "#d7ccc8", "#8d6e63", "#5d4037");
                 drawVoxelBox(x + 8, y + 6, 27, 9, 3, 6, "#ffffff", "#cfd8dc", "#78909c");
             } else if (node.type === 'stone') {
-                // Trụ Đá Cổ Ngữ Bắc Âu 3D
                 drawVoxelBox(x - 12, y + 8, 6, 18, 14, 20, "#90a4ae", "#546e7a", "#263238");
                 drawVoxelBox(x + 8, y + 6, 6, 22, 16, 32, "#cfd8dc", "#78909c", "#37474f");
-                // Chữ Rune 3D phát sáng
                 ctx.fillStyle = "#00e5ff";
                 ctx.fillRect(x + 5, y - 20, 3, 18);
                 ctx.fillRect(x + 8, y - 18, 5, 3);
                 ctx.fillRect(x + 8, y - 10, 5, 3);
             } else if (node.type === 'iron') {
-                // Núi Quặng Sắt 3D & Mạch Dung Nham
                 drawVoxelBox(x - 6, y + 8, 6, 36, 24, 18, "#6d4c41", "#4e342e", "#27160e");
                 drawVoxelBox(x + 4, y + 6, 24, 22, 16, 12, "#8d6e63", "#5d4037", "#3e2723");
-                // Khối quặng sắt đỏ rực nhô ra
                 drawVoxelBox(x - 12, y + 9, 12, 10, 8, 8, "#ffab40", "#ff6d00", "#bf360c");
                 drawVoxelBox(x + 8, y + 9, 16, 12, 8, 9, "#ffd180", "#ff9100", "#dd2c00");
             } else if (node.type === 'steel') {
-                // Lò Rèn Thép Ulfberht 3D
                 drawVoxelBox(x, y + 8, 6, 42, 26, 22, "#546e7a", "#37474f", "#1c262b");
                 drawVoxelBox(x, y + 8, 12, 22, 14, 14, "#80d8ff", "#00b0ff", "#01579b");
-                // Phôi Thép sáng bóng trên đe 3D
                 drawVoxelBox(x, y + 12, 6, 26, 8, 5, "#ffffff", "#cfd8dc", "#78909c");
             }
 
-            // Bảng tên 3D phía trước mỏ
             drawVoxelBox(x, y + 24, 0, 58, 6, 15, "#8d6e63", "#2c1b12", "#1a0f0a", "#d4a017");
             ctx.fillStyle = "#ffd54f";
             ctx.font = "bold 11px 'Courier New'";
@@ -704,45 +765,34 @@
             ctx.textAlign = "left";
         }
 
-        // Vẽ Đại Sảnh Viking 3D (Mead Hall Voxel Đa Tầng)
         function drawVikingMeadHall3D(cx, cy) {
             draw3DShadow(cx, cy + 16, 68, 28, 35);
 
-            // 1. Nền móng đá tảng 3D
             drawVoxelBox(cx, cy + 28, 0, 104, 56, 14, "#90a4ae", "#546e7a", "#263238");
-
-            // 2. Thân Tường Gỗ Sồi Đại Sảnh 3D
             drawVoxelBox(cx, cy + 24, 14, 92, 48, 34, "#8d6e63", "#5d4037", "#3e2723");
 
-            // Các cột trụ gỗ 3D nổi phía trước
             drawVoxelBox(cx - 42, cy + 26, 14, 10, 12, 36, "#d4a017", "#3e2723", "#1b0f0a");
             drawVoxelBox(cx + 42, cy + 26, 14, 10, 12, 36, "#d4a017", "#3e2723", "#1b0f0a");
 
-            // 3. Mái Đại Sảnh 3D Xếp Bậc Thang Voxel (4 tầng mái tạo chiều sâu 3D cực chất)
             drawVoxelBox(cx, cy + 26, 48, 106, 54, 10, "#b71c1c", "#7f1d1d", "#450a0a");
             drawVoxelBox(cx, cy + 24, 58, 84,  46, 10, "#c62828", "#8e2424", "#450a0a");
             drawVoxelBox(cx, cy + 22, 68, 60,  38, 9,  "#d32f2f", "#991b1b", "#450a0a");
             drawVoxelBox(cx, cy + 20, 77, 34,  30, 8,  "#e53935", "#b71c1c", "#450a0a");
 
-            // Sống mái Mạ Vàng 3D & 2 Đầu Rồng Drakkar Voxel trên đỉnh
             drawVoxelBox(cx, cy + 18, 85, 16, 24, 6, "#ffe082", "#d4a017", "#8d6e63");
             drawVoxelBox(cx - 12, cy + 18, 91, 10, 8, 8, "#ffd54f", "#ffb300", "#ff6f00");
             drawVoxelBox(cx + 12, cy + 18, 91, 10, 8, 8, "#ffd54f", "#ffb300", "#ff6f00");
 
-            // Dàn Khiên Tròn Viking 3D gắn nổi trước hiên
             const shieldX = [-32, -16, 16, 32];
             shieldX.forEach((sx, idx) => {
                 drawVoxelBox(cx + sx, cy + 26, 34, 11, 4, 11, "#ffd54f", idx % 2 === 0 ? "#c62828" : "#1565c0", "#212121");
             });
 
-            // Cổng Đại Sảnh 3D
             drawVoxelBox(cx, cy + 27, 14, 26, 6, 26, "#4e342e", "#27160e", "#110905", "#d4a017");
 
-            // 2 Chậu lửa 3D canh cổng
             drawTorchBrazier3D(cx - 28, cy + 34);
             drawTorchBrazier3D(cx + 28, cy + 34);
 
-            // Thanh máu 3D của Đại Sảnh
             ctx.fillStyle = "#1a0f0a";
             ctx.fillRect(cx - 48, cy - 96, 96, 10);
             ctx.fillStyle = "#c0392b";
@@ -754,23 +804,18 @@
             ctx.strokeRect(cx - 48, cy - 96, 96, 10);
         }
 
-        // Vẽ Tường Phòng Thủ 3D Voxel
         function drawVikingWall3D(w) {
             const x = w.x;
             const y = w.y;
             draw3DShadow(x, y + 4, 16, 7, 14);
 
             if (w.type === 'wood') {
-                // Hàng rào cọc gỗ 3D
                 drawVoxelBox(x, y + 6, 0, 26, 14, 20, "#8d6e63", "#5d4037", "#3e2723");
-                // Chóp nhọn 3D
                 drawVoxelBox(x - 8, y + 6, 20, 6, 6, 6, "#efebe9", "#bcaaa4", "#8d6e63");
                 drawVoxelBox(x,     y + 6, 20, 6, 6, 6, "#efebe9", "#bcaaa4", "#8d6e63");
                 drawVoxelBox(x + 8, y + 6, 20, 6, 6, 6, "#efebe9", "#bcaaa4", "#8d6e63");
-                // Khiên 3D treo trước tường
                 drawVoxelBox(x, y + 8, 6, 10, 4, 10, "#ffd54f", "#b71c1c", "#450a0a");
             } else {
-                // Tường Đá Tảng Cổ Ngữ 3D
                 drawVoxelBox(x, y + 6, 0, 28, 16, 22, "#b0bec5", "#607d8b", "#263238");
                 drawVoxelBox(x, y + 6, 22, 24, 12, 4, "#cfd8dc", "#78909c", "#37474f");
                 ctx.fillStyle = "#00e5ff";
@@ -778,14 +823,12 @@
                 ctx.fillRect(x - 4, y - 7, 9, 2);
             }
 
-            // Thanh máu tường
             ctx.fillStyle = "#1b0000";
             ctx.fillRect(x - 13, y - 28, 26, 4);
             ctx.fillStyle = "#00e676";
             ctx.fillRect(x - 13, y - 28, Math.max(0, (w.hp / w.maxHp) * 26), 4);
         }
 
-        // Vẽ 4 Cấp Trụ Phòng Thủ 3D Voxel + Thanh Đạn & Cảnh Báo Hết Đạn
         function drawVikingTower3D(t) {
             const x = t.x;
             const y = t.y;
@@ -795,7 +838,6 @@
             draw3DShadow(x, y + 6, 20, 9, 26);
 
             if (type === 'wood') {
-                // TRỤ GỖ 3D: Tháp Canh Gỗ 2 Tầng + Nỏ Xoay 3D
                 drawVoxelBox(x, y + 8, 0,  26, 20, 18, "#6d4c41", "#4e342e", "#27160e");
                 drawVoxelBox(x, y + 8, 18, 30, 22, 7,  "#a1887f", "#6d4c41", "#3e2723", "#d4a017");
 
@@ -808,7 +850,6 @@
                 ctx.fillRect(-4 - rec, -2, 13, 4);
                 ctx.restore();
             } else if (type === 'stone') {
-                // TRỤ ĐÁ 3D: Pháo Đài Đá + Đại Nỏ Ballista
                 drawVoxelBox(x, y + 8, 0,  28, 22, 22, "#90a4ae", "#546e7a", "#263238");
                 drawVoxelBox(x, y + 8, 22, 32, 24, 7,  "#cfd8dc", "#78909c", "#37474f");
 
@@ -821,19 +862,16 @@
                 ctx.fillRect(-6 - rec, -2, 16, 4);
                 ctx.restore();
             } else if (type === 'iron') {
-                // TRỤ SẮT 3D: Tháp Hỏa Pháo Muspelheim
                 drawVoxelBox(x, y + 8, 0,  28, 22, 24, "#546e7a", "#263238", "#11171a");
                 drawVoxelBox(x, y + 8, 12, 30, 24, 4,  "#ff9100", "#d35400", "#873600");
                 drawVoxelBox(x, y + 8, 24, 22, 18, 8,  "#ff6d00", "#bf360c", "#6a1b09");
                 drawVoxelBox(x, y + 8, 32, 12, 10, 6,  "#ffff00", "#ffab00", "#ff6d00");
             } else if (type === 'steel') {
-                // TRỤ THÉP 3D: Tháp Sấm Sét Thor Mjolnir
                 drawVoxelBox(x, y + 8, 0,  30, 24, 26, "#4f83cc", "#1c313a", "#0d191e", "#ffd54f");
                 let pulse = Math.sin(frameTick * 0.2) * 3;
                 drawVoxelBox(x, y + 8, 28 + pulse, 18, 14, 10, "#ffffff", "#00e5ff", "#00838f");
             }
 
-            // THANH ĐẠN (AMMO BAR) TRÊN ĐỈNH TRỤ
             let maxClip = t.maxAmmo || AMMO_PER_RESOURCE[type] || 5;
             let curAmmo = t.ammo !== undefined ? t.ammo : maxClip;
             ctx.fillStyle = "#121212";
@@ -842,7 +880,6 @@
             ctx.fillStyle = ammoColor;
             ctx.fillRect(x - 14, y - 42, Math.max(0, (curAmmo / maxClip) * 28), 4.5);
 
-            // Cảnh báo HẾT ĐẠN nhấp nháy nếu kho cạn tài nguyên hệ đó
             if (t.outOfAmmo) {
                 ctx.fillStyle = "rgba(183, 28, 28, 0.9)";
                 ctx.fillRect(x - 28, y - 58, 56, 14);
@@ -854,9 +891,7 @@
             }
         }
 
-        // Vẽ Đạn 3D bay trên không trung (Có bóng đổ dưới mặt đất!)
         function drawVikingBullet3D(b) {
-            // Bóng của viên đạn dưới mặt đất tạo cảm giác bay 3D thực sự
             ctx.fillStyle = "rgba(0,0,0,0.28)";
             ctx.beginPath();
             ctx.ellipse(b.x, b.y + 14, 4, 2, 0, 0, Math.PI * 2);
@@ -887,7 +922,6 @@
             }
         }
 
-        // Vẽ Dân Làng 3D Voxel
         function drawVikingVillager3D(v) {
             const phase = v.walkPhase || 0;
             const isMining = v.workTimer > 0 && gameState.screen === "COMBAT";
@@ -904,21 +938,16 @@
 
             draw3DShadow(0, 5, 7, 3, 8);
 
-            // 2 Chân 3D Voxel
             drawVoxelBox(-2.5 + legStride * 0.4, 5, Math.max(0, legStride * 0.4), 3.5, 4, 5, "#5d4037", "#3e2723", "#1b0f0a");
             drawVoxelBox( 2.5 - legStride * 0.4, 5, Math.max(0, -legStride * 0.4), 3.5, 4, 5, "#5d4037", "#3e2723", "#1b0f0a");
 
-            // Thân Áo Tunic 3D Voxel
             drawVoxelBox(0, 5, 4 + walkBob, 10, 7, 8, "#5c85d6", "#2e5cb8", "#1b366e");
 
-            // Đầu & Râu 3D Voxel
             drawVoxelBox(0, 5, 12 + walkBob, 8, 7, 6, "#ffe0b2", "#ffccbc", "#d7a898");
             drawVoxelBox(dir * 1, 5, 11 + walkBob, 8, 5, 4, "#f39c12", v.beardColor || "#d35400", "#873600");
 
-            // Mũ lông thú 3D Voxel
             drawVoxelBox(0, 5, 17 + walkBob, 10, 8, 4, "#8d6e63", "#5d4037", "#3e2723");
 
-            // Tay vung Cuốc/Rìu
             ctx.save();
             ctx.translate(dir * 5, -4 - walkBob);
             let toolAngle = isMining ? Math.sin(phase * 1.5) * 0.95 : Math.sin(phase) * 0.35;
@@ -929,7 +958,6 @@
             ctx.fillRect(-3, -8, 6, 3.5);
             ctx.restore();
 
-            // Khối Tài Nguyên 3D vác trên lưng
             if (v.carrying) {
                 let topC = v.carrying === 'wood' ? "#a1887f" : v.carrying === 'stone' ? "#cfd8dc" : v.carrying === 'iron' ? "#ffab40" : "#80d8ff";
                 let frontC = v.carrying === 'wood' ? "#6d4c41" : v.carrying === 'stone' ? "#90a4ae" : v.carrying === 'iron' ? "#e65100" : "#00b0ff";
@@ -952,7 +980,6 @@
             ctx.restore();
         }
 
-        // Vẽ Chiến Binh Huscarl 3D Voxel
         function drawVikingSoldier3D(s) {
             const phase = s.walkPhase || 0;
             const walkBob = Math.abs(Math.sin(phase)) * 2.0;
@@ -964,28 +991,21 @@
 
             draw3DShadow(0, 6, 9, 4, 10);
 
-            // Chân bọc sắt 3D
             drawVoxelBox(-3 + legStride * 0.4, 6, Math.max(0, legStride * 0.4), 4, 4, 5, "#5d4037", "#3e2723", "#1b0f0a");
             drawVoxelBox( 3 - legStride * 0.4, 6, Math.max(0, -legStride * 0.4), 4, 4, 5, "#5d4037", "#3e2723", "#1b0f0a");
 
-            // Áo choàng 3D đỏ sau lưng
             drawVoxelBox(-dir * 5, 6, 4 + walkBob, 6, 6, 10, "#e53935", "#b71c1c", "#450a0a");
 
-            // Giáp xích 3D Voxel
             drawVoxelBox(0, 6, 5 + walkBob, 12, 8, 9, "#b0bec5", "#607d8b", "#263238");
 
-            // Đầu, Râu & Mũ Sắt Sừng 3D
             drawVoxelBox(0, 6, 14 + walkBob, 9, 7, 5, "#ffe0b2", "#ffccbc", "#d7a898");
             drawVoxelBox(dir * 1, 6, 13 + walkBob, 9, 5, 4, "#ff8a65", "#e65100", "#873600");
             drawVoxelBox(0, 6, 19 + walkBob, 11, 8, 5, "#cfd8dc", "#78909c", "#37474f");
-            // 2 Sừng 3D
             drawVoxelBox(-7, 6, 22 + walkBob, 3, 3, 5, "#ffffff", "#fff8e1", "#bcaaa4");
             drawVoxelBox( 7, 6, 22 + walkBob, 3, 3, 5, "#ffffff", "#fff8e1", "#bcaaa4");
 
-            // Khiên Tròn Viking 3D
             drawVoxelBox(-dir * 7, 7, 6 + walkBob, 8, 4, 9, "#ffd54f", "#c62828", "#450a0a");
 
-            // Rìu Chiến Bắc Âu 3D
             ctx.save();
             ctx.translate(dir * 7, -4 - walkBob);
             let axeAngle = (s.attackCooldown > 14) ? ((26 - s.attackCooldown) / 12) * 1.45 : Math.sin(phase) * 0.25;
@@ -1004,7 +1024,6 @@
             ctx.restore();
         }
 
-        // Vẽ Quái Thú Bắc Âu 3D Voxel
         function drawVikingMonster3D(m) {
             const phase = m.walkPhase || 0;
             const anim = Math.sin(phase);
@@ -1015,10 +1034,8 @@
             ctx.translate(m.x, m.y);
 
             if (m.type === "normal") {
-                // 1. QUỶ NHỆN MÁU HELHEIM 3D VOXEL
                 draw3DShadow(0, 6, 14, 5, 8);
 
-                // 8 Chân nhện 3D có khớp nổi
                 for (let i = -1; i <= 2; i++) {
                     let legWave = Math.sin(phase * 1.5 + i * 1.4) * 3.5;
                     let lx = i * 5 - 3;
@@ -1026,12 +1043,10 @@
                     drawVoxelBox(lx + 9, 5, 2 + Math.max(0, -legWave), 4, 3, 6, "#590d22", "#2b0912", "#110206");
                 }
 
-                // Khối Bụng Nhện 3D phình to + Gai xương 3D trên lưng
                 drawVoxelBox(-dir * 6, 5, 3 + bob * 0.4, 16, 12, 11, "#c9184a", "#800f2f", "#3c0919");
                 drawVoxelBox(-dir * 8, 5, 14 + bob * 0.4, 3, 3, 4, "#ffffff", "#ffccd5", "#a4133c");
                 drawVoxelBox(-dir * 4, 5, 14 + bob * 0.4, 3, 3, 4, "#ffffff", "#ffccd5", "#a4133c");
 
-                // Khối Đầu Nhện 3D + Nanh độc trắng
                 drawVoxelBox(dir * 5, 5, 3 + bob * 0.3, 10, 9, 8, "#800f2f", "#590d22", "#2b0912");
                 ctx.fillStyle = "#ff0054";
                 ctx.fillRect(dir * 6, -6, 2.5, 2.5);
@@ -1039,22 +1054,17 @@
                 drawVoxelBox(dir * 10, 5, 3, 4, 3, 2.5, "#ffffff", "#e0e0e0", "#9e9e9e");
 
             } else if (m.type === "tank") {
-                // 2. CỰ THÚ GAI BĂNG YMIR 3D VOXEL
                 draw3DShadow(0, 8, 19, 7, 16);
 
-                // 4 Chân trụ Voxel khổng lồ
                 drawVoxelBox(-11, 8, Math.max(0, bob), 8, 7, 9, "#3c096c", "#240046", "#10002b");
                 drawVoxelBox( 11, 8, Math.max(0, -bob), 8, 7, 9, "#3c096c", "#240046", "#10002b");
 
-                // Thân Khối Golem/Behemoth 3D
                 drawVoxelBox(0, 8, 7 + Math.abs(bob) * 0.4, 30, 20, 16, "#5a189a", "#3c096c", "#10002b");
 
-                // Cụm Tinh Thể Băng 3D nhô cao trên lưng
                 drawVoxelBox(-9, 8, 23, 7, 6, 8,  "#90e0ef", "#00b4d8", "#03045e");
                 drawVoxelBox( 0, 8, 23, 9, 8, 13, "#caf0f8", "#00e5ff", "#0077b6");
                 drawVoxelBox( 9, 8, 23, 7, 6, 7,  "#90e0ef", "#00b4d8", "#03045e");
 
-                // Mắt Độc Nhãn Cyclops & Hàm răng 3D
                 ctx.fillStyle = "#ff0054";
                 ctx.fillRect(dir * 4 - 4, -10, 8, 5);
                 ctx.fillStyle = "#ffbe0b";
@@ -1065,26 +1075,20 @@
                 }
 
             } else if (m.type === "fast") {
-                // 3. ÁC LONG DƠI LỬA 3D (Bay lơ lửng trên cao z = 14px tách biệt với bóng dưới đất!)
                 let wingFlap = Math.sin(phase * 1.6) * 8;
                 draw3DShadow(0, 10, 12, 4, 20);
 
-                // Đuôi rồng 3D trên không
                 drawVoxelBox(-dir * 13, 6, 14 + bob, 9, 4, 4, "#dc2f02", "#9d0208", "#370617");
                 drawVoxelBox(-dir * 19, 6, 16 + bob, 5, 4, 5, "#ffba08", "#f48c06", "#9d0208");
 
-                // Thân Rồng Lửa 3D
                 drawVoxelBox(0, 6, 13 + bob, 15, 9, 7, "#e85d04", "#d00000", "#6a040f");
 
-                // Cánh Dơi 3D vỗ lên xuống
                 drawVoxelBox(-3, 6, 18 + bob - wingFlap * 0.6, 10, 14, 3, "#ffba08", "#9d0208", "#370617");
 
-                // Đầu Rồng 3D + Sừng Vàng
                 drawVoxelBox(dir * 9, 6, 15 + bob, 9, 7, 6, "#f48c06", "#9d0208", "#370617");
                 drawVoxelBox(dir * 7, 6, 21 + bob, 5, 3, 4, "#ffff3f", "#ffba08", "#d00000");
 
             } else if (m.type === "boss") {
-                // 4. BOSS CHÚA TỂ HỦY DIỆT NIDHOGG 3D VOXEL
                 ctx.strokeStyle = "rgba(255, 0, 84, 0.75)";
                 ctx.lineWidth = 2.5;
                 ctx.beginPath();
@@ -1096,15 +1100,12 @@
                 drawVoxelBox(-14, 10, Math.max(0, bob), 10, 9, 11, "#590d22", "#2b0014", "#100007");
                 drawVoxelBox( 14, 10, Math.max(0, -bob), 10, 9, 11, "#590d22", "#2b0014", "#100007");
 
-                // Thân Khối Ma Thần 3D
                 drawVoxelBox(0, 10, 9, 42, 26, 22, "#800f2f", "#590d22", "#2b0014");
 
-                // 3 Cột Sừng Lửa Địa Ngục 3D trên đỉnh
                 drawVoxelBox(-14, 10, 31, 8, 7, 12, "#ffba08", "#ff6d00", "#9d0208");
                 drawVoxelBox(  0, 10, 31, 10, 9, 18, "#ffff3f", "#ff9e00", "#d00000");
                 drawVoxelBox( 14, 10, 31, 8, 7, 12, "#ffba08", "#ff6d00", "#9d0208");
 
-                // 3 Mắt Ma Thần & Hàm Răng
                 ctx.fillStyle = "#00f5d4";
                 ctx.fillRect(-11, -14, 5, 4);
                 ctx.fillRect(6, -14, 5, 4);
@@ -1138,14 +1139,12 @@
         }
 
         function drawGame() {
-            // 1. ĐỊA HÌNH CAO NGUYÊN BẮC ÂU 3D (Có vách đá nổi 3D ở rìa dưới)
+            // 1. ĐỊA HÌNH CAO NGUYÊN BẮC ÂU 3D
             ctx.fillStyle = "#0d1713";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Mặt cỏ 3D cao nguyên
             drawVoxelBox(canvas.width / 2, 680, 0, 1076, 20, 610, "#20382e", "#1a2e26", "#0f1c17");
 
-            // Vách đá 3D dưới chân bản đồ tạo cảm giác bàn cờ 3D nổi
             for (let cx = 20; cx < 1080; cx += 40) {
                 drawVoxelBox(cx + 15, 698, 0, 38, 8, 18, "#455a64", "#37474f", "#1c262b");
             }
@@ -1159,7 +1158,6 @@
             let baseCenterX = canvas.width / 2;
             let baseCenterY = canvas.height / 2 + 30;
 
-            // Đường đá 3D có viền nổi nối từ Đại Sảnh tới các mỏ tài nguyên
             ctx.strokeStyle = "rgba(38, 22, 16, 0.65)";
             ctx.lineWidth = 18;
             ctx.setLineDash([12, 6]);
@@ -1179,35 +1177,74 @@
             });
             ctx.setLineDash([]);
 
-            if (gameState.screen === "START") {
+            if (gameState.screen === "START" || gameState.screen === "GAMEOVER" || gameState.screen === "VICTORY") {
                 mapRocks.forEach(r => drawNordicRock3D(r.x, r.y));
                 mapTrees.forEach(t => drawVikingPine3D(t.x, t.y, t.scale));
 
-                ctx.fillStyle = "rgba(8, 12, 16, 0.86)";
+                ctx.fillStyle = "rgba(8, 12, 16, 0.88)";
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                drawVikingPanel(230, 140, 640, 420, "#1c110a", "#d4a017");
+                drawVikingPanel(200, 120, 700, 450, "#1c110a", "#d4a017");
 
-                drawVoxelBox(canvas.width / 2, 228, 0, 52, 16, 42, "#ffd54f", "#b71c1c", "#450a0a");
+                if (gameState.screen === "GAMEOVER") {
+                    drawVoxelBox(canvas.width / 2, 215, 0, 52, 16, 42, "#ff5252", "#b71c1c", "#450a0a");
+                    ctx.fillStyle = "#ff1744";
+                    ctx.font = "bold 32px 'Courier New'";
+                    ctx.textAlign = "center";
+                    ctx.fillText("💀 ĐẠI SẢNH ĐÃ THẤT THỦ! 💀", canvas.width / 2, 275);
 
-                ctx.fillStyle = "#ffd54f";
-                ctx.font = "bold 34px 'Courier New'";
-                ctx.textAlign = "center";
-                ctx.fillText("⚔️ VIKING DEFENSE 3D ⚔️", canvas.width / 2, 285);
+                    ctx.fillStyle = "#ffd54f";
+                    ctx.font = "bold 18px 'Courier New'";
+                    ctx.fillText(`Bộ tộc của bạn đã ngã xuống ở Mùa Đông thứ ${gameState.round} / ${gameState.maxRounds}`, canvas.width / 2, 320);
 
-                ctx.fillStyle = "#00e5ff";
-                ctx.font = "bold 16px 'Courier New'";
-                ctx.fillText("VOXEL 3D EDITION - 30 ROUNDS (60 GIÂY / ROUND)", canvas.width / 2, 322);
+                    ctx.fillStyle = "#d7ccc8";
+                    ctx.font = "14px 'Courier New'";
+                    ctx.fillText("Ragnarok đã hủy diệt tất cả... Hãy rèn luyện và tái sinh bộ tộc!", canvas.width / 2, 360);
 
-                ctx.fillStyle = "#d7ccc8";
-                ctx.font = "13px 'Courier New'";
-                ctx.fillText("• Cơ chế Đạn Dược Thực Tế: Trụ bắn tiêu hao tài nguyên tương ứng (Gỗ/Đá/Sắt/Thép)", canvas.width / 2, 360);
-                ctx.fillText("• Đồ họa Pixel 3D Voxel có chiều sâu Z-Sorting, bóng đổ 3D & chuyển động mượt!", canvas.width / 2, 386);
+                    drawVikingPanel(400, 430, 300, 70, "#8e2424", "#ffd54f");
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "bold 22px 'Courier New'";
+                    ctx.fillText("🔄 THỬ LẠI TỪ ĐẦU", canvas.width / 2, 473);
+                } else if (gameState.screen === "VICTORY") {
+                    drawVoxelBox(canvas.width / 2, 215, 0, 52, 16, 42, "#ffe082", "#ffd54f", "#ff8f00");
+                    ctx.fillStyle = "#ffd54f";
+                    ctx.font = "bold 34px 'Courier New'";
+                    ctx.textAlign = "center";
+                    ctx.fillText("🏆 VALHALLA BẤT DIỆT! 🏆", canvas.width / 2, 275);
 
-                drawVikingPanel(400, 430, 300, 70, "#8e2424", "#ffd54f");
-                ctx.fillStyle = "#ffffff";
-                ctx.font = "bold 22px 'Courier New'";
-                ctx.fillText("🛡️ KHỞI CHIẾN NGAY", canvas.width / 2, 473);
+                    ctx.fillStyle = "#00e676";
+                    ctx.font = "bold 18px 'Courier New'";
+                    ctx.fillText("BẢO VỆ THÀNH CÔNG ĐẠI SẢNH QUA 30 MÙA ĐÔNG KHỐC LIỆT!", canvas.width / 2, 320);
+
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "14px 'Courier New'";
+                    ctx.fillText("Odin và các vị thần Asgard vinh danh chiến công huyền thoại của bạn!", canvas.width / 2, 360);
+
+                    drawVikingPanel(400, 430, 300, 70, "#1b5e20", "#ffd54f");
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "bold 22px 'Courier New'";
+                    ctx.fillText("⚔️ CHƠI LẠI TRẬN MỚI", canvas.width / 2, 473);
+                } else {
+                    drawVoxelBox(canvas.width / 2, 215, 0, 52, 16, 42, "#ffd54f", "#b71c1c", "#450a0a");
+                    ctx.fillStyle = "#ffd54f";
+                    ctx.font = "bold 34px 'Courier New'";
+                    ctx.textAlign = "center";
+                    ctx.fillText("⚔️ VIKING DEFENSE 3D ⚔️", canvas.width / 2, 275);
+
+                    ctx.fillStyle = "#00e5ff";
+                    ctx.font = "bold 16px 'Courier New'";
+                    ctx.fillText("VOXEL 3D EDITION - 30 ROUNDS (60 GIÂY / ROUND)", canvas.width / 2, 315);
+
+                    ctx.fillStyle = "#d7ccc8";
+                    ctx.font = "13px 'Courier New'";
+                    ctx.fillText("• Tương thích mượt mà mọi thiết bị: PC, Laptop và Điện thoại di động", canvas.width / 2, 355);
+                    ctx.fillText("• Cơ chế Đạn Dược: Trụ tiêu hao Gỗ/Đá/Sắt/Thép tương ứng khi xả đạn!", canvas.width / 2, 380);
+
+                    drawVikingPanel(400, 430, 300, 70, "#8e2424", "#ffd54f");
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "bold 22px 'Courier New'";
+                    ctx.fillText("🛡️ KHỞI CHIẾN NGAY", canvas.width / 2, 473);
+                }
                 ctx.textAlign = "left";
                 return;
             }
@@ -1222,7 +1259,6 @@
             ctx.setLineDash([]);
 
             // 2. HỆ THỐNG Z-SORTING (SẮP XẾP CHIỀU SÂU 3D THEO TỌA ĐỘ Y)
-            // Mọi vật thể 3D trên bản đồ được sắp xếp từ xa tới gần để che khuất nhau chuẩn không gian 3D!
             const renderQueue = [];
 
             mapRocks.forEach(r => renderQueue.push({ y: r.y, draw: () => drawNordicRock3D(r.x, r.y) }));
